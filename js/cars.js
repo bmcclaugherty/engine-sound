@@ -335,6 +335,35 @@
         shiftUp: 4200,
         shiftDown: 1600
       }
+    },
+    {
+      // Proof of concept: a real recording played back pitched by rpm. The
+      // audio lives under recordings/ and is NOT committed (see .gitignore) —
+      // replace it with your own or a licensed clip before any real use.
+      id: 'ftype-v8',
+      name: 'F-Type V8 (sample)',
+      tag: 'Real recording · supercharged 5.0 V8',
+      blurb: 'A real V8 clip, varispeed-pitched by rpm. Proof of concept.',
+      idle: 700,
+      redline: 6500,
+      engine: {
+        type: 'sample',
+        sampleUrl: 'recordings/ftype-hold.wav',
+        nativeRpm: 2850,
+        fade: 1440,
+        gain: 0.9
+      },
+      vehicle: {
+        gears: [3.5, 2.15, 1.45, 1.0, 0.8, 0.64],
+        finalDrive: 3.42,
+        wheelR: 0.34,
+        maxAccel: 6.4,
+        brakeAccel: 9.0,
+        drag: 0.0022,
+        roll: 0.35,
+        shiftUp: 5900,
+        shiftDown: 2300
+      }
     }
   ];
 

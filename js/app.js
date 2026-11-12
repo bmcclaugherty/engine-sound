@@ -163,6 +163,7 @@
 
   function selectCar(i) {
     if (i === S.carIndex) return;
+    var prev = S.carIndex;
     stopDemo();
     S.cruise = null;
     S.carIndex = i;
@@ -175,10 +176,27 @@
     Array.prototype.forEach.call($('carPicker').children, function (b, j) {
       b.setAttribute('aria-checked', String(j === i));
     });
-    audio.setCar(car.engine);
     chip('chipGear', 'N');
-    setStatus(car.name + ' loaded — ' + car.blurb, '');
-    save();
+    audio.setCar(car.engine).then(function () {
+      setStatus(car.name + ' loaded — ' + car.blurb, '');
+      save();
+    }).catch(function (err) {
+      // Sample missing (e.g. the recording is not bundled): fall back.
+      S.carIndex = prev;
+      var p = CARS[prev];
+      vehicle = new window.Vehicle(p.vehicle);
+      S.rpm = p.idle;
+      S.speed = 0;
+      S.gear = 1;
+      buildGauge();
+      Array.prototype.forEach.call($('carPicker').children, function (b, j) {
+        b.setAttribute('aria-checked', String(j === prev));
+      });
+      audio.setCar(p.engine).catch(function () { /* ignore */ });
+      chip('chipGear', 'N');
+      setStatus("Couldn't load the recording for " + car.name + ' — it is not bundled with this build. Kept ' + p.name + '.', 'err');
+      save();
+    });
   }
 
   // ---------------------------------------------------------------- pedals --
@@ -320,17 +338,23 @@
         S.load = st.load; S.overrun = st.overrun; S.cut = st.cut; S.throttle = st.throttle;
       }
 
-      audio.setParams({
-        rpm: S.rpm,
-        load: S.load,
-        overrun: S.overrun,
-        cut: S.cut,
-        character: S.character,
-        crackle: S.crackle,
-        whine: S.whine,
-        volume: S.volume
-      });
+      var engine = CARS[S.carIndex].engine;
+      if (engine.type === 'sample') {
+        audio.setRate(S.rpm / engine.nativeRpm);
+      } else {
+        audio.setParams({
+          rpm: S.rpm,
+          load: S.load,
+          overrun: S.overrun,
+          cut: S.cut,
+          character: S.character,
+          crackle: S.crackle,
+          whine: S.whine,
+          volume: S.volume
+        });
+      }
     } else {
+      if (CARS[S.carIndex].engine.type === 'sample') audio.setRate(0);
       S.rpm += (CARS[S.carIndex].idle * 0.0 - S.rpm) * 0.2;
       S.speed = 0;
       S.load = 0;
