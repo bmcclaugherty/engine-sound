@@ -17,6 +17,12 @@ Spotify or the radio as usual; the engine mixes in on top.
 on-screen pedals (press lower for more throttle, the top of the gas pedal holds
 your speed), or hit *Rev* / *Demo run*.
 
+**If the sound stops:** mobile browsers suspend audio after a lock screen, a call
+or a tab switch, and iOS only allows it back on a real touch. The status chip
+says *Audio paused* / *Tap to enable audio* when that happens — one tap anywhere
+brings it back. On iOS the hardware mute switch would otherwise silence Web
+Audio, so the page asks for the `playback` audio session.
+
 ## How it works
 
 Everything is generated per sample; there are no audio files.
@@ -40,11 +46,13 @@ Everything is generated per sample; there are no audio files.
   DC blocker. Ignition cut (shifts, rev limiter) replaces the bang with an
   unburnt hiss, which is what makes a limiter sound like a limiter.
 - **Drivetrain.** Throttle and brake drive a simple longitudinal model; speed
-  goes through gear ratios, final drive and wheel radius to give rpm, with
-  clutch slip off the line, automatic shifts with ignition cut, engine braking
-  and overrun (which is what turns the crackle on). In GPS mode the car
-  supplies the speed and the drivetrain infers gear, rpm and throttle from how
-  fast that speed is changing.
+  goes through gear ratios, final drive and wheel radius to give rpm. Off the
+  line it behaves like a torque converter — revs sit at a stall speed until the
+  gear rpm overtakes them, so they only ever climb — then automatic shifts cut
+  the ignition for 100 ms and land rev-matched. Lifting off gives engine braking
+  and overrun, which is what turns the crackle on. In GPS mode the car supplies
+  the speed and the drivetrain infers gear, rpm and throttle from how fast that
+  speed is changing.
 
 The DSP runs in an `AudioWorklet` (falling back to a `ScriptProcessorNode` where
 worklets are unavailable), so UI jank cannot interrupt the sound.
