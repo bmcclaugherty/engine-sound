@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090d">
+<title>Engine Sound — gas engine noise for your EV</title>
+<meta name="description" content="A V8, V12 or flat-six engine sound that follows your real speed, synthesized live in your browser and played through your car's speakers. No app, no install, free.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23090b10'/%3E%3Cpath d='M16 6v9M16 17v9M11 10l5 7 5-7' stroke='%23ff8a3d' stroke-width='2.6' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M16 4v9M16 19v9M9.5 8.5l6.5 10 6.5-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-name">Engine<em>Sound</em></span>
+    </div>
+    <div class="chips">
+      <span class="chip" id="chipGps" title="Location status">GPS idle</span>
+      <span class="chip" id="chipAudio" title="Audio status">Audio idle</span>
+      <span class="chip chip-gear" id="chipGear" title="Gear">N</span>
+      <div class="segmented tiny" id="unitSeg" role="radiogroup" aria-label="Speed units">
+        <button type="button" role="radio" data-unit="mph" aria-checked="true">mph</button>
+        <button type="button" role="radio" data-unit="kmh" aria-checked="false">km/h</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <section class="panel cluster" aria-label="Instrument cluster">
+      <svg class="tach" id="tach" viewBox="0 0 400 400" aria-hidden="true">
+        <defs>
+          <linearGradient id="arcGrad" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stop-color="#3ba7ff"/>
+            <stop offset="45%" stop-color="#6ee7a8"/>
+            <stop offset="75%" stop-color="#ffb03a"/>
+            <stop offset="100%" stop-color="#ff4d3d"/>
+          </linearGradient>
+          <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <path class="arc-track" id="arcTrack" fill="none"/>
+        <path class="arc-red" id="arcRed" fill="none"/>
+        <path class="arc-value" id="arcValue" fill="none" stroke="url(#arcGrad)" filter="url(#softGlow)"/>
+        <g id="gaugeTicks" class="ticks"></g>
+        <g id="needle" class="needle">
+          <line x1="200" y1="140" x2="200" y2="62"/>
+          <circle class="needle-hub" cx="200" cy="140" r="4.5"/>
+        </g>
+      </svg>
+
+      <div class="readouts">
+        <div class="rpm-row">
+          <span class="rpm-value" id="rpmValue">0</span>
+          <span class="rpm-unit">rpm</span>
+        </div>
+        <div class="speed-row">
+          <span class="speed-value" id="speedValue">0</span>
+          <span class="speed-unit" id="speedUnit">mph</span>
+        </div>
+      </div>
+
+      <p class="scale-cap">rpm × 1000</p>
+
+      <div class="pedal-bars" aria-hidden="true">
+        <div class="pbar"><span class="pbar-label">Throttle</span><span class="pbar-track"><i id="throttleFill"></i></span></div>
+      </div>
+
+      <div class="spec-strip">
+        <div class="spec"><span class="spec-k">Redline</span><span class="spec-v" id="specRedline">6600</span></div>
+        <div class="spec"><span class="spec-k">Gearbox</span><span class="spec-v" id="specGears">6-speed</span></div>
+        <div class="spec"><span class="spec-k">Source</span><span class="spec-v" id="specSource">Test drive</span></div>
+      </div>
+    </section>
+
+    <section class="panel controls" aria-label="Controls">
+
+      <div class="start-wrap">
+        <button type="button" class="start" id="startBtn" aria-pressed="false">
+          <span class="start-ring"></span>
+          <span class="start-label" id="startLabel">Start engine</span>
+        </button>
+        <p class="status" id="status">Press start, allow location for GPS speed, then drive.</p>
+      </div>
+
+      <div class="group">
+        <div class="group-head"><span>Engine</span></div>
+        <div class="cars" id="carPicker" role="radiogroup" aria-label="Engine"></div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">
+          <span>Speed source</span>
+          <div class="segmented" id="sourceSeg" role="radiogroup" aria-label="Speed source">
+            <button type="button" role="radio" data-source="demo" aria-checked="true">Test drive</button>
+            <button type="button" role="radio" data-source="gps" aria-checked="false">GPS speed</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="group pedals-group" id="pedalsGroup">
+        <div class="pedals">
+          <button type="button" class="pedal brake" id="brakePedal" aria-label="Brake: closer to the bottom brakes harder">
+            <span class="pedal-face"><span class="pedal-title">Brake</span><span class="pedal-hint">lower = harder</span></span>
+          </button>
+          <button type="button" class="pedal gas" id="gasPedal" aria-label="Gas: the top holds your speed, closer to the bottom accelerates harder">
+            <span class="pedal-face"><span class="pedal-title">Gas</span><span class="pedal-hint">top = hold speed</span></span>
+          </button>
+        </div>
+        <div class="actions">
+          <button type="button" class="mini" id="revBtn">Rev</button>
+          <button type="button" class="mini" id="demoBtn">Demo run</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-head"><span>Sound</span></div>
+        <div class="sliders">
+          <label class="slider"><span class="sl-name">Volume</span><input id="volume" type="range" min="0" max="100" value="72"><output id="volumeOut">72</output></label>
+          <label class="slider"><span class="sl-name">Intensity</span><input id="intensity" type="range" min="0" max="100" value="60"><output id="intensityOut">60</output></label>
+          <label class="slider"><span class="sl-name">Character</span><input id="character" type="range" min="0" max="100" value="45"><output id="characterOut">45</output></label>
+          <label class="slider"><span class="sl-name">Crackle</span><input id="crackle" type="range" min="0" max="100" value="55"><output id="crackleOut">55</output></label>
+          <label class="slider"><span class="sl-name">Whine</span><input id="whine" type="range" min="0" max="100" value="35"><output id="whineOut">35</output></label>
+        </div>
+      </div>
+
+      <details class="help">
+        <summary>How to use it in your car</summary>
+        <ol>
+          <li>Park, open this page in the car browser and bookmark it.</li>
+          <li>Press <b>Start engine</b> and allow location access — the sound follows your GPS speed, so there is no engine without it.</li>
+          <li>Turn the media volume up; keep your music playing, the engine mixes in on top.</li>
+          <li>Stopped at a light? <b>Rev</b> blips the throttle. On a phone or laptop, use <b>Test drive</b> and the on-screen pedals.</li>
+        </ol>
+        <p class="fine">Expect about half a second of delay inside the car: part of it is the car's audio path, part is GPS only noticing the speed after the fact. A web page cannot drive the outside Boombox speaker — this plays through the cabin speakers like music does.</p>
+      </details>
+
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Synthesized live in your browser · no app, no account, no tracking</span>
+    <span class="foot-sep">·</span>
+    <a href="#help" class="foot-link" id="helpLink">What it does</a>
+  </footer>
+
+</div>
+
+<script src="js/cars.js"></script>
+<script src="js/engine-dsp.js"></script>
+<script src="js/vehicle.js"></script>
+<script src="js/gps.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
