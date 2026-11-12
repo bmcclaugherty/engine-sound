@@ -44,10 +44,10 @@
     if (this.shiftTimer > 0) return;
     if (this.gear < c.gears.length && gearRpm > c.shiftUp && throttle > 0.25) {
       this.gear++;
-      this.shiftTimer = 0.17;
+      this.shiftTimer = 0.10;      // ignition cut, not a pause between gears
     } else if (this.gear > 1 && gearRpm < c.shiftDown && throttle < 0.5) {
       this.gear--;
-      this.shiftTimer = 0.13;
+      this.shiftTimer = 0.08;
     }
   };
 
@@ -64,8 +64,10 @@
 
     if (this.shiftTimer > 0) this.shiftTimer = Math.max(0, this.shiftTimer - dt);
 
+    if (this.speed > 0.8) this.shiftLogic(this.rpmAt(this.speed, this.gear), throttle);
+    // Recompute after a possible shift so force and rev-matching use the gear
+    // the car is actually in now.
     var gearRpm = this.rpmAt(this.speed, this.gear);
-    if (this.speed > 0.8) this.shiftLogic(gearRpm, throttle);
 
     // ---- longitudinal forces ---------------------------------------------
     var torque = torqueFactor(gearRpm, c);
@@ -73,18 +75,24 @@
     var resist = c.drag * this.speed * this.speed + (this.speed > 0.15 ? c.roll : 0);
     var braking = brake * c.brakeAccel;
     // Closed throttle above idle: engine braking through the driveline.
-    var engineBrake = throttle < 0.06 && this.speed > 1 ? 0.9 * torque : 0;
+    var engineBrake = throttle < 0.06 && this.speed > 1 ? 0.55 * torque : 0;
     this.speed = Math.max(0, this.speed + (drive - resist - braking - engineBrake) * dt);
 
     // ---- rpm --------------------------------------------------------------
-    var free = c.idle + throttle * (c.redline * 0.58 - c.idle);
-    var slip = clamp(1 - this.speed / 3.2, 0, 1);      // clutch slip off the line
+    /*
+     * Torque converter, not a slipping clutch: below the stall speed the revs
+     * sit at `stall`, above it they follow the gear. Taking the max of the two
+     * is what keeps the revs monotonic off the line — a blended clutch target
+     * pulls them back down as the clutch bites, which sounds like a whoop.
+     */
+    var stall = c.idle + throttle * (c.redline * 0.42 - c.idle);
     var target;
-    if (this.shiftTimer > 0) target = Math.max(c.idle, gearRpm * 0.90);
-    else target = gearRpm * (1 - slip) + free * slip;
+    // In a shift the revs drop to the new gear's speed, not to a fixed offset.
+    if (this.shiftTimer > 0) target = Math.max(c.idle, gearRpm * 0.97);
+    else target = Math.max(gearRpm, stall);
 
     var limiter = target > c.redline ? c.redline : target;
-    var tau = limiter > this.rpm ? 0.075 / intensity : 0.11;
+    var tau = limiter > this.rpm ? 0.085 / intensity : 0.12;
     this.rpm += (limiter - this.rpm) * (1 - Math.exp(-dt / tau));
     this.rpm = clamp(this.rpm, c.idle * 0.9, c.redline);
 

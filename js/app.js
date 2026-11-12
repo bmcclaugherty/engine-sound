@@ -23,7 +23,12 @@
     crackle: 0.55,
     whine: 0.35,
     gas: 0,
+    gasTarget: 0,
     brake: 0,
+    brakeTarget: 0,
+    cruise: null,
+    silentTicks: 0,
+    audioWarned: false,
     revUntil: 0,
     demo: null,
     rpm: 0,
@@ -158,6 +163,8 @@
 
   function selectCar(i) {
     if (i === S.carIndex) return;
+    stopDemo();
+    S.cruise = null;
     S.carIndex = i;
     var car = CARS[i];
     vehicle = new window.Vehicle(car.vehicle);
@@ -206,6 +213,10 @@
     node.addEventListener('pointerup', release);
     node.addEventListener('pointercancel', release);
     node.addEventListener('lostpointercapture', release);
+    // iOS: a long press otherwise selects the label and pops the callout menu,
+    // which also cancels the pointer stream mid-press.
+    node.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    node.addEventListener('selectstart', function (e) { e.preventDefault(); });
   }
 
   function syncPedalVisual(node, amount) {
@@ -238,6 +249,8 @@
   function startDemo() {
     var car = CARS[S.carIndex];
     vehicle = new window.Vehicle(car.vehicle);
+    S.cruise = null;
+    S.gas = 0; S.gasTarget = 0; S.brake = 0; S.brakeTarget = 0;
     S.demo = { i: 0, t: 0 };
     $('demoBtn').classList.add('on');
     setStatus('Demo run: idle, pull through the gears, lift off, brake.', '');
@@ -268,6 +281,15 @@
     if (S.running) {
       var gas = 0, brake = 0;
 
+      // Pedals ramp instead of snapping: a released pedal is a lift-off, not a
+      // switch, and the smoothing is what makes a blip sound like a blip.
+      var gasRate = 1 - Math.exp(-dt / 0.09);
+      var brakeRate = 1 - Math.exp(-dt / 0.07);
+      S.gas += (S.gasTarget - S.gas) * gasRate;
+      S.brake += (S.brakeTarget - S.brake) * brakeRate;
+      if (S.gas < 0.005) S.gas = 0;
+      if (S.brake < 0.005) S.brake = 0;
+
       if (S.source === 'gps') {
         var st = vehicle.updateFromSpeed(dt, gps.speed, 0.6 + S.intensity);
         S.speed = st.speed; S.rpm = st.rpm; S.gear = st.gear;
@@ -281,9 +303,17 @@
         } else {
           gas = S.gas;
           brake = S.brake;
+          // Top of the pedal is a cruise control: hold the speed it was pressed at.
+          if (S.cruise) {
+            var err = S.cruise.target - vehicle.speed;
+            gas = clamp(0.10 + err * 0.6, 0, 0.85);
+          }
         }
         var revving = now < S.revUntil;
-        if (revving) gas = Math.max(gas, 1);
+        if (revving) {
+          // Free rev only when stationary; on the move it is just a throttle blip.
+          gas = S.speed < 1.2 ? Math.max(gas, 1) : Math.min(1, gas + 0.3);
+        }
 
         st = vehicle.update(dt, { throttle: gas, brake: brake, intensity: 0.55 + S.intensity * 0.9 });
         S.speed = st.speed; S.rpm = st.rpm; S.gear = st.gear;
@@ -309,6 +339,9 @@
       S.throttle = 0;
     }
 
+    // ---- audio watchdog (every ~0.5 s) ------------------------------------
+    if (uiTick % 30 === 0 && S.running) watchdog();
+
     // ---- paint (half rate) ------------------------------------------------
     if (uiTick % 2 === 0) {
       paintGauge(S.rpm);
@@ -319,6 +352,40 @@
     }
 
     requestAnimationFrame(frame);
+  }
+
+  /*
+   * Two failures look identical to the user and both mean "no sound": the
+   * browser suspended the context (iOS after backgrounding, a call or the lock
+   * screen) or it is running but silent. Say which, and try to fix it.
+   */
+  function watchdog() {
+    var st = audio.stateNow();
+    if (st !== 'running') {
+      chip('chipAudio', 'Audio paused', 'warn');
+      setStatus('The browser paused the audio. Tap anywhere on the page to bring the engine back.', 'warn');
+      audio.resume();
+      return;
+    }
+    var idle = CARS[S.carIndex].idle;
+    var expectSound = S.throttle > 0.12 || S.rpm > idle + 350;
+    var lvl = audio.level();
+    if (expectSound && lvl < 0.002) {
+      S.silentTicks++;
+      if (S.silentTicks >= 2 && !S.audioWarned) {
+        S.audioWarned = true;
+        chip('chipAudio', 'Audio silent', 'warn');
+        setStatus('No sound is coming out — check the volume and the silent switch, or tap here to retry audio.', 'warn');
+        audio.resume();
+      }
+    } else {
+      S.silentTicks = 0;
+      if (S.audioWarned) {
+        S.audioWarned = false;
+        chip('chipAudio', audio.worklet ? 'Audio live' : 'Audio live (basic)', 'ok');
+        setStatus('Audio is back.', '');
+      }
+    }
   }
 
   function speedInUnit(ms) {
@@ -382,12 +449,18 @@
         rpm: car.idle, load: 0, overrun: 0, cut: 0,
         character: S.character, crackle: S.crackle, whine: S.whine, volume: S.volume
       });
-      chip('chipAudio', info.worklet ? 'Audio live' : 'Audio live (basic)', 'ok');
-      if (S.source === 'gps') {
-        gps.start(null, gpsState);
-        setStatus('Waiting for a GPS fix — the engine follows your speed.', 'warn');
+      if (info.state === 'running') {
+        chip('chipAudio', info.worklet ? 'Audio live' : 'Audio live (basic)', 'ok');
+        if (S.source === 'gps') {
+          gps.start(null, gpsState);
+          setStatus('Waiting for a GPS fix — the engine follows your speed.', 'warn');
+        } else {
+          setStatus('Engine running. Press the gas pedal — or hit Rev.', '');
+        }
       } else {
-        setStatus('Engine running. Press the gas pedal — or hit Rev.', '');
+        // iOS: the context stayed suspended. One tap anywhere resumes it.
+        chip('chipAudio', 'Tap to enable audio', 'warn');
+        setStatus('The browser started the engine paused. Tap anywhere on the page to hear it.', 'warn');
       }
       keepAwake();
     } catch (err) {
@@ -403,6 +476,8 @@
     audio.stop();
     S.running = false;
     stopDemo();
+    S.cruise = null;
+    S.gas = 0; S.gasTarget = 0; S.brake = 0; S.brakeTarget = 0;
     $('startBtn').setAttribute('aria-pressed', 'false');
     $('startLabel').textContent = 'Start engine';
     chip('chipAudio', 'Audio idle', null);
@@ -445,11 +520,25 @@
     bindSlider('whine', 'whine');
 
     bindPedal($('gasPedal'), function (depth, pressed) {
-      S.gas = pressed ? (depth < 0.22 ? 0.12 : 0.15 + 0.85 * depth) : 0;
-      syncPedalVisual($('gasPedal'), pressed ? depth : 0);
+      if (!pressed) {
+        S.gasTarget = 0;
+        S.cruise = null;
+        syncPedalVisual($('gasPedal'), 0);
+        return;
+      }
+      if (depth < 0.24) {
+        // Top of the pedal: hold the speed it was pressed at, like a cruise.
+        if (!S.cruise) S.cruise = { target: Math.max(vehicle.speed, 2.5) };
+        S.gasTarget = 0.4;
+      } else {
+        S.cruise = null;
+        S.gasTarget = 0.12 + 0.88 * depth;
+      }
+      syncPedalVisual($('gasPedal'), depth);
     });
     bindPedal($('brakePedal'), function (depth, pressed) {
-      S.brake = pressed ? 0.15 + 0.85 * depth : 0;
+      S.brakeTarget = pressed ? 0.12 + 0.88 * depth : 0;
+      if (!pressed) S.cruise = null;
       syncPedalVisual($('brakePedal'), pressed ? depth : 0);
     });
 
@@ -458,8 +547,9 @@
     });
 
     $('revBtn').addEventListener('click', function () {
-      if (!S.running) { startEngine().then(function () { S.revUntil = performance.now() + 420; }); return; }
-      S.revUntil = performance.now() + 420;
+      var blip = function () { S.revUntil = performance.now() + 420; };
+      if (!S.running) { startEngine().then(blip); return; }
+      blip();
     });
 
     $('demoBtn').addEventListener('click', function () {
@@ -496,15 +586,38 @@
       if (e.code === 'Space' || e.key === 'r') { e.preventDefault(); S.revUntil = performance.now() + 420; }
     });
 
+    /*
+     * Backgrounding: the browser suspends the audio context anyway, so pause
+     * explicitly to keep state honest. Coming back needs a resume that iOS may
+     * refuse without a gesture — resume() arms a one-tap handler if so.
+     */
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
-        if (S.running) audio.mute(true);
+        if (S.running) audio.pause();
       } else {
-        audio.resume();
-        audio.mute(false);
         last = performance.now();
         keepAwake();
+        if (S.running) audio.resume();
       }
+    });
+    window.addEventListener('pageshow', function () {
+      last = performance.now();
+      if (S.running && audio.stateNow() !== 'running') audio.resume();
+    });
+
+    // Audio status -> chip, wherever the change came from.
+    audio.onState = function (s) {
+      if (s === 'running' || s === 'resumed') {
+        chip('chipAudio', audio.worklet ? 'Audio live' : 'Audio live (basic)', 'ok');
+      } else if (s === 'suspended') {
+        chip('chipAudio', 'Tap to enable audio', 'warn');
+      } else if (s === 'idle') {
+        chip('chipAudio', 'Audio idle', null);
+      }
+    };
+
+    document.addEventListener('contextmenu', function (e) {
+      if (e.target && e.target.closest && e.target.closest('.pedal, .start, .mini, .car')) e.preventDefault();
     });
 
     gps.onState = gpsState;

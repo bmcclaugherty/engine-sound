@@ -20,6 +20,43 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * Touch: an iOS long press on a button selects its label and pops the callout
+ * menu, which also cancels the pointer stream the pedals need. Nothing in this
+ * UI is meant to be text-selectable except the help copy.
+ */
+button,
+.pedal,
+.car,
+.mini,
+.start,
+.segmented,
+.chip,
+.slider,
+input[type="range"],
+.tach,
+.readouts {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
+button,
+.car,
+.mini,
+.start,
+.segmented button {
+  touch-action: manipulation;
+}
+
+.help,
+.help * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -422,6 +459,25 @@ body {
 }
 
 .pedal.brake::after { background: linear-gradient(0deg, rgba(255, 77, 61, 0.35), rgba(255, 77, 61, 0.02)); }
+
+.pedal-zone {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  height: 24%;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(255, 138, 61, 0.10), rgba(255, 138, 61, 0));
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+  pointer-events: none;
+}
 
 .pedal-face {
   position: relative;
