@@ -368,6 +368,11 @@
       l = dcL.tick(l);
       r = dcR.tick(r);
 
+      // The DC blocker can overshoot a unipolar pulse train by a few percent;
+      // clamp so no path (worklet or ScriptProcessor, limiter or not) can clip.
+      if (l > 0.999) l = 0.999; else if (l < -0.999) l = -0.999;
+      if (r > 0.999) r = 0.999; else if (r < -0.999) r = -0.999;
+
       outL[offset + s] = l;
       if (outR) outR[offset + s] = r;
     }

@@ -1,10 +1,11 @@
 # Engine Sound
 
 A gas-engine sound for your EV, synthesized live in the browser from your speed.
-A cross-plane V8, a V12 or a flat-six, revving with your actual GPS speed through
-a gearbox model and played out of the car's speakers. It runs in the Tesla
-browser (or any modern browser), needs no app and no account, and it is free —
-there is no daily limit, paywall or tracking here.
+Nine engines — a cross-plane V8, an air-cooled 911, a road V12, a flat-six, an
+F1 V12, a V10, a turbo four, a rotary and a diesel six — revving with your
+actual GPS speed through a gearbox model and played out of the car's speakers.
+It runs in the Tesla browser (or any modern browser), needs no app and no
+account, and it is free — there is no daily limit, paywall or tracking here.
 
 Live: https://bmcclaugherty.github.io/engine-sound/
 
@@ -70,14 +71,21 @@ worklets are unavailable), so UI jank cannot interrupt the sound.
 | `js/audio.js` | audio graph, worklet transport, car-switch ducking |
 | `js/app.js` | input loop, gauge painting, UI wiring |
 | `tools/render-test.js` | offline render + level/DC/NaN sanity check |
+| `tools/render-run.js` | renders an idle → redline → lift WAV per engine for previews |
 
 ## Adding an engine
 
 Add an entry to `js/cars.js`. `firing` is one entry per cylinder per 720° cycle,
-`0` for the left bank and `1` for the right, in firing order. `pipeFreq` is where
-the exhaust pipe resonates, `formants` shapes the note, `muffler` is the
-cutoff. Lower `q` values give a broader, less vocal tone. Idle and redline are
-set on the car and copied into both blocks.
+`0` for the left bank and `1` for the right, in firing order (an uneven per-bank
+rhythm is what makes the 911 warble). `pipeFreq` is where the exhaust pipe
+resonates, `formants` shapes the note, `muffler` is the cutoff. Lower `q` values
+give a broader, less vocal tone. Idle and redline are set on the car and copied
+into both blocks.
+
+High-revving engines need a short pulse: once the firing period (in samples)
+drops below the pulse length, the overlapping deterministic pulses start
+cancelling and the top of the rev range goes quiet. The F1 V12 at 18,500 rpm
+fires every ~27 samples, so its pulse is 1.5 ms / 0.4 ms decay.
 
 ## Local development
 
