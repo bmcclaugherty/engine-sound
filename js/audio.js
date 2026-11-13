@@ -156,6 +156,21 @@
     return sp;
   };
 
+  // Crossfade the clip's tail into its head so the loop is seamless: without
+  // this the raw loop jump (often 5x a normal sample step) is an audible click
+  // every loop, and a runtime crossfade can only smear it. Returns a buffer
+  // trimmed by F samples.
+  function makeSeamless(x, F) {
+    var N = x.length;
+    if (F <= 0 || F >= N) return x;
+    var out = x.slice(0, N - F);
+    for (var i = 0; i < F; i++) {
+      var w = i / F;
+      out[i] = x[i] * w + x[N - F + i] * (1 - w);
+    }
+    return out;
+  }
+
   EngineAudio.prototype._decodeSample = async function (cfg) {
     var resp = await fetch(cfg.sampleUrl, { cache: 'no-store' });
     if (!resp.ok) throw new Error('sample not found (' + resp.status + ')');
@@ -169,7 +184,8 @@
     } else {
       mono.set(audioBuf.getChannelData(0));
     }
-    return mono;
+    var seam = Math.round(this.ctx.sampleRate * (cfg.seamFade || 0.15));
+    return makeSeamless(mono, Math.min(seam, Math.floor(n * 0.25)));
   };
 
   EngineAudio.prototype._buildSample = async function (ctx, cfg) {
@@ -178,7 +194,6 @@
       left: mono,
       loopStart: cfg.loopStart || 0,
       loopEnd: cfg.loopEnd || 0,
-      fade: cfg.fade,
       gain: cfg.gain
     };
     if (ctx.audioWorklet && typeof ctx.audioWorklet.addModule === 'function') {

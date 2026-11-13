@@ -4,9 +4,10 @@
  * Plays one mono buffer in a loop at a playback rate set from outside (the app
  * maps engine rpm onto `rate = rpm / nativeRpm`). Catmull-Rom cubic
  * interpolation keeps the fractional playhead smooth when the rate moves —
- * linear interpolation audibly aliases, especially when slowed down — and a
- * crossfade around the loop seam hides the join. No DOM, no imports, no
- * allocation in the loop.
+ * linear interpolation audibly aliases, especially when slowed down. The
+ * buffer is expected to already be seamless: audio.js crossfades the clip's
+ * tail into its head at load time, so a naive wrap is click-free and no
+ * runtime crossfade is needed. No DOM, no imports, no allocation in the loop.
  *
  * Loaded twice, like engine-dsp.js: as an AudioWorklet module it registers
  * "sample-processor", as a classic script it exposes globalThis.SampleDSP for
@@ -37,9 +38,7 @@
     var len = this.buf.length;
     this.loopStart = clamp(data.loopStart || 0, 0, Math.max(0, len - 2));
     this.loopEnd = (data.loopEnd || len) > this.loopStart ? Math.min(data.loopEnd || len, len) : len;
-    var loopLen = this.loopEnd - this.loopStart;
-    var fade = data.fade || Math.round(this.sr * 0.05);
-    this.fade = clamp(fade, 0, Math.floor(loopLen * 0.45));
+    this.loopLen = this.loopEnd - this.loopStart;
     this.pos = this.loopStart;
     this.rate = 0;
     this.target = 0;
@@ -51,8 +50,8 @@
 
   SampleDSP.prototype.render = function (outL, outR, offset, count) {
     var buf = this.buf;
-    var len = this.loopEnd, start = this.loopStart, fade = this.fade;
-    var loopLen = len - start;
+    var len = this.loopEnd, start = this.loopStart;
+    var loopLen = this.loopLen;
     if (loopLen <= 0 || !buf.length) {
       for (var z = 0; z < count; z++) { outL[offset + z] = 0; if (outR) outR[offset + z] = 0; }
       return;
@@ -65,28 +64,12 @@
     if (rate < 0.0005) rate = 0;
 
     var last = buf.length - 1;
-    var s, x, x2, a, tail, v;
+    var s, x;
 
     for (s = 0; s < count; s++) {
-      if (rate === 0) {
-        x = 0;
-      } else {
-        x = cubic(buf, last, pos);
-
-        // Crossfade the loop tail into the loop head over `fade` samples.
-        tail = len - pos;
-        if (tail < fade) {
-          v = start + (pos - (len - fade));
-          x2 = cubic(buf, last, v);
-          a = tail / fade;               // 1 at the tail, 0 at the seam
-          x = x * a + x2 * (1 - a);
-        }
-        x *= gain;
-      }
-
+      x = rate === 0 ? 0 : cubic(buf, last, pos) * gain;
       outL[offset + s] = x;
       if (outR) outR[offset + s] = x;
-
       pos += rate;
       if (pos >= len) pos -= loopLen;
     }

@@ -350,7 +350,7 @@
         type: 'sample',
         sampleUrl: 'recordings/ftype-hold.wav',
         nativeRpm: 2850,
-        fade: 2880,
+        seamFade: 0.15,
         gain: 0.9
       },
       vehicle: {
