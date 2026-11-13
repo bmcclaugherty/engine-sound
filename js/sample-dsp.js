@@ -2,9 +2,11 @@
  * sample-dsp.js — varispeed looped sample playback (proof of concept).
  *
  * Plays one mono buffer in a loop at a playback rate set from outside (the app
- * maps engine rpm onto `rate = rpm / nativeRpm`). Linear interpolation keeps
- * the fractional playhead smooth, and a short crossfade around the loop seam
- * hides the join. No DOM, no imports, no allocation in the loop.
+ * maps engine rpm onto `rate = rpm / nativeRpm`). Catmull-Rom cubic
+ * interpolation keeps the fractional playhead smooth when the rate moves —
+ * linear interpolation audibly aliases, especially when slowed down — and a
+ * crossfade around the loop seam hides the join. No DOM, no imports, no
+ * allocation in the loop.
  *
  * Loaded twice, like engine-dsp.js: as an AudioWorklet module it registers
  * "sample-processor", as a classic script it exposes globalThis.SampleDSP for
@@ -15,6 +17,20 @@
 
   function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
 
+  // Catmull-Rom cubic read, indices clamped to the buffer. Allocation-free.
+  function cubic(buf, last, p) {
+    var i = p | 0;
+    var f = p - i;
+    var im = i > 0 ? i - 1 : 0;
+    var ip1 = i < last ? i + 1 : last;
+    var ip2 = i + 1 < last ? i + 2 : last;
+    var x0 = buf[im], x1 = buf[i], x2 = buf[ip1], x3 = buf[ip2];
+    var a = 0.5 * (3 * (x1 - x2) - x0 + x3);
+    var b = 0.5 * (2 * x0 - 5 * x1 + 4 * x2 - x3);
+    var c = 0.5 * (x2 - x0);
+    return ((a * f + b) * f + c) * f + x1;
+  }
+
   function SampleDSP(sampleRate, data) {
     this.sr = sampleRate > 0 ? sampleRate : 48000;
     this.buf = data.left || new Float32Array(0);
@@ -22,7 +38,7 @@
     this.loopStart = clamp(data.loopStart || 0, 0, Math.max(0, len - 2));
     this.loopEnd = (data.loopEnd || len) > this.loopStart ? Math.min(data.loopEnd || len, len) : len;
     var loopLen = this.loopEnd - this.loopStart;
-    var fade = data.fade || Math.round(this.sr * 0.03);
+    var fade = data.fade || Math.round(this.sr * 0.05);
     this.fade = clamp(fade, 0, Math.floor(loopLen * 0.45));
     this.pos = this.loopStart;
     this.rate = 0;
@@ -43,30 +59,25 @@
     }
 
     var pos = this.pos, rate = this.rate, target = this.target, gain = this.gain;
-    // Smooth the rate so rpm changes glide instead of zippering.
-    rate += (target - rate) * 0.12;
+    // Long glide: a pitch change tracks rpm over ~70 ms instead of zippering,
+    // which is the difference between a smooth pull and a staircase.
+    rate += (target - rate) * 0.045;
     if (rate < 0.0005) rate = 0;
 
     var last = buf.length - 1;
-    var s, i0, f, x, x2, a, tail, i1, v;
+    var s, x, x2, a, tail, v;
 
     for (s = 0; s < count; s++) {
       if (rate === 0) {
         x = 0;
       } else {
-        i0 = pos | 0;
-        f = pos - i0;
-        i1 = i0 + 1 < buf.length ? i0 + 1 : last;
-        x = buf[i0] + (buf[i1] - buf[i0]) * f;
+        x = cubic(buf, last, pos);
 
         // Crossfade the loop tail into the loop head over `fade` samples.
         tail = len - pos;
         if (tail < fade) {
           v = start + (pos - (len - fade));
-          i0 = v | 0;
-          f = v - i0;
-          i1 = i0 + 1 < buf.length ? i0 + 1 : last;
-          x2 = buf[i0] + (buf[i1] - buf[i0]) * f;
+          x2 = cubic(buf, last, v);
           a = tail / fade;               // 1 at the tail, 0 at the seam
           x = x * a + x2 * (1 - a);
         }
